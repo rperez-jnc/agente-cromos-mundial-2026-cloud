@@ -20,6 +20,8 @@ from data_manager_cloud import (
     obtener_entradas_por_lote,
     obtener_resumen,
     resolver_codigo_en_coleccion,
+    obtener_resumen_lotes_entrada,
+    obtener_detalle_lote_entrada,
 )
 
 from ui_style import aplicar_estilo, render_header
@@ -542,7 +544,98 @@ with tab_movimientos:
     st.dataframe(pd.DataFrame(listar_movimientos(datos)), use_container_width=True)
 
 with tab_entradas:
-    st.dataframe(pd.DataFrame(obtener_entradas_por_lote(datos)), use_container_width=True)
+    st.markdown("### Entradas por fecha y lote")
+
+    resumen_lotes = obtener_resumen_lotes_entrada(datos)
+
+    if not resumen_lotes:
+        st.info("Todavía no hay entradas por lote.")
+    else:
+        df_resumen_lotes = pd.DataFrame(resumen_lotes)
+
+        st.dataframe(
+            df_resumen_lotes,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        lotes_disponibles = df_resumen_lotes["Lote"].tolist()
+
+        lote_seleccionado = st.selectbox(
+            "Selecciona un lote para ver el detalle",
+            lotes_disponibles,
+            key="lote_entrada_seleccionado_cloud",
+        )
+
+        detalle_lote = obtener_detalle_lote_entrada(datos, lote_seleccionado)
+        df_detalle_lote = pd.DataFrame(detalle_lote)
+
+        st.markdown("### Detalle del lote seleccionado")
+
+        col_lote_1, col_lote_2, col_lote_3, col_lote_4 = st.columns(4)
+
+        total_unidades_lote = sum(fila["Cantidad entrada"] for fila in detalle_lote)
+        total_nuevos_lote = sum(1 for fila in detalle_lote if fila["Ya lo tenía"] == "No")
+        total_ya_tenia_lote = sum(1 for fila in detalle_lote if fila["Ya lo tenía"] == "Sí")
+        total_repetidos_lote = sum(
+            1 for fila in detalle_lote if fila["Repetido dentro del lote"] == "Sí"
+        )
+
+        col_lote_1.metric("Unidades entrada", total_unidades_lote)
+        col_lote_2.metric("Nuevos", total_nuevos_lote)
+        col_lote_3.metric("Ya los tenía", total_ya_tenia_lote)
+        col_lote_4.metric("Repetidos en lote", total_repetidos_lote)
+
+        st.dataframe(
+            df_detalle_lote,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        ya_tenia = [
+            fila for fila in detalle_lote
+            if fila["Ya lo tenía"] == "Sí"
+        ]
+
+        repetidos_en_lote = [
+            fila for fila in detalle_lote
+            if fila["Repetido dentro del lote"] == "Sí"
+        ]
+
+        col_desc_1, col_desc_2 = st.columns(2)
+
+        with col_desc_1:
+            st.markdown("#### Ya los tenía antes de meter el lote")
+            st.dataframe(
+                pd.DataFrame(ya_tenia),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        with col_desc_2:
+            st.markdown("#### Repetidos dentro del propio lote")
+            st.dataframe(
+                pd.DataFrame(repetidos_en_lote),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        excel_lote = dataframe_excel_bytes(
+            {
+                "Resumen lotes": resumen_lotes,
+                "Detalle lote": detalle_lote,
+                "Ya los tenia": ya_tenia,
+                "Repetidos lote": repetidos_en_lote,
+            }
+        )
+
+        st.download_button(
+            "Descargar informe del lote en Excel",
+            data=excel_lote,
+            file_name=f"informe_lote_{lote_seleccionado}_{usuario_actual['usuario']}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
 
 st.divider()
 

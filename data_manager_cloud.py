@@ -970,3 +970,118 @@ def aplicar_checks_estado_usuario(
                     resultado["desmarcados"].append(cromo_id)
 
     return resultado
+
+def obtener_resumen_lotes_entrada(datos):
+    lotes = {}
+
+    for mov in datos.get("movimientos", []):
+        lote_id = mov.get("lote_id", "")
+        cantidad = int(mov.get("cantidad") or 0)
+
+        if not lote_id or cantidad <= 0:
+            continue
+
+        if lote_id not in lotes:
+            lotes[lote_id] = {
+                "Lote": lote_id,
+                "Fecha entrada": mov.get("fecha", ""),
+                "Cromos distintos": set(),
+                "Unidades entrada": 0,
+                "Nuevos": 0,
+                "Ya los tenía": 0,
+                "Repetidos dentro del lote": 0,
+            }
+
+        cromo_id = mov.get("cromo_id", "")
+        cantidad_antes = int(mov.get("cantidad_antes") or 0)
+
+        lotes[lote_id]["Cromos distintos"].add(cromo_id)
+        lotes[lote_id]["Unidades entrada"] += cantidad
+
+        if cantidad_antes > 0:
+            lotes[lote_id]["Ya los tenía"] += 1
+        else:
+            lotes[lote_id]["Nuevos"] += 1
+
+    filas = []
+
+    for lote in lotes.values():
+        filas.append(
+            {
+                "Fecha entrada": lote["Fecha entrada"],
+                "Lote": lote["Lote"],
+                "Cromos distintos": len(lote["Cromos distintos"]),
+                "Unidades entrada": lote["Unidades entrada"],
+                "Nuevos": lote["Nuevos"],
+                "Ya los tenía": lote["Ya los tenía"],
+                "Repetidos dentro del lote": lote["Repetidos dentro del lote"],
+            }
+        )
+
+    filas.sort(key=lambda x: x["Fecha entrada"], reverse=True)
+
+    return filas
+
+
+def obtener_detalle_lote_entrada(datos, lote_id):
+    acumulado = {}
+
+    for mov in datos.get("movimientos", []):
+        if mov.get("lote_id", "") != lote_id:
+            continue
+
+        cantidad = int(mov.get("cantidad") or 0)
+
+        if cantidad <= 0:
+            continue
+
+        cromo_id = mov.get("cromo_id", "")
+        cromo = datos["cromos"].get(cromo_id, {})
+
+        if cromo_id not in acumulado:
+            acumulado[cromo_id] = {
+                "Fecha entrada": mov.get("fecha", ""),
+                "Lote": lote_id,
+                "ID": cromo_id,
+                "Grupo": cromo.get("grupo", ""),
+                "Sección": cromo.get("seccion", ""),
+                "Número": cromo.get("numero", ""),
+                "Nombre": cromo.get("nombre", ""),
+                "Tipo": cromo.get("tipo", ""),
+                "Cantidad entrada": 0,
+                "Cantidad antes": int(mov.get("cantidad_antes") or 0),
+                "Cantidad después": int(mov.get("cantidad_despues") or 0),
+                "Veces en lote": 0,
+            }
+
+        acumulado[cromo_id]["Cantidad entrada"] += cantidad
+        acumulado[cromo_id]["Veces en lote"] += 1
+        acumulado[cromo_id]["Cantidad después"] = max(
+            acumulado[cromo_id]["Cantidad después"],
+            int(mov.get("cantidad_despues") or 0),
+        )
+
+    filas = []
+
+    for fila in acumulado.values():
+        ya_lo_tenia = fila["Cantidad antes"] > 0
+        repetido_en_lote = fila["Cantidad entrada"] > 1 or fila["Veces en lote"] > 1
+
+        if ya_lo_tenia and repetido_en_lote:
+            clasificacion = "Ya lo tenía y repetido en el lote"
+        elif ya_lo_tenia:
+            clasificacion = "Ya lo tenía"
+        elif repetido_en_lote:
+            clasificacion = "Nuevo, pero repetido en el lote"
+        else:
+            clasificacion = "Nuevo"
+
+        fila["Clasificación"] = clasificacion
+        fila["Ya lo tenía"] = "Sí" if ya_lo_tenia else "No"
+        fila["Repetido dentro del lote"] = "Sí" if repetido_en_lote else "No"
+
+        filas.append(fila)
+
+    filas.sort(key=lambda x: x["ID"])
+
+    return filas
